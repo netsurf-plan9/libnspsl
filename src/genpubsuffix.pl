@@ -92,7 +92,7 @@ sub treesubdom
 	$tldtree_ref->{$domelem_puny} = \%node;
 	$$nodeidx_ref += 1;
     }
-    
+
     # recurse down if there are more parts to the domain
     if (($isexception == 0) && (scalar(@{$parts_ref}) > 0)) {
 	treesubdom($tldtree_ref->{$domelem_puny}, $nodeidx_ref, $strtab_ref, $stridx_ref, $parts_ref);
@@ -193,41 +193,39 @@ sub calc_pnode
     my $lineidx = -1;
 
     # update the output index to after this node
-    $$opidx_ref += scalar keys %$parent_ref;
+    # need to allow for an additional node for each entry with children
+
+    # iterate over each child element domain/ref pair
+    while ( my ($cdom, $cref) = each(%$parent_ref) ) {
+	if (scalar keys (%$cref) != 0) {
+	    $$opidx_ref += 2;
+	} else {
+	    $$opidx_ref += 1;
+	}
+    }
 
     # entry block 
     if ($startidx == ($$opidx_ref - 1)) {
-	$our_dat = "\n    /* entry " . $startidx . " */\n    ";
+	$our_dat = "\n    /* entry " . $startidx . " */\n";
     } else {
-	$our_dat = "\n    /* entries " . $startidx . " to " . ($$opidx_ref - 1) . " */\n    ";
+	$our_dat = "\n    /* entries " . $startidx . " to " . ($$opidx_ref - 1) . " */\n";
     }
 
     # iterate over each child element domain/ref pair
     while ( my ($cdom, $cref) = each(%$parent_ref) ) {
-        # make array look pretty by limiting entries per line
-	if ($lineidx == 3) {
-	    $our_dat .= "\n    ";
-	    $lineidx = 0;
-	} elsif ($lineidx == -1) {
-	    $lineidx = 1;
-	} else {
-	    $our_dat .= " ";
-	    $lineidx += 1;
-	}
-
-	$our_dat .= "{ ";
-	$our_dat .= $strtab_ref->{$cdom} . ", ";
 	my $child_count = scalar keys (%$cref);
-	$our_dat .= $child_count . ", ";
-	if ($child_count != 0) {
-	    $our_dat .= $$opidx_ref . ", ";
-	    $child_dat .= calc_pnode($cref, $strtab_ref, $opidx_ref);
-	} else {
-	    $our_dat .= 0 . ", ";
-	}
-	$our_dat .= pstr_len($cdom) ;
-	$our_dat .= " },";
 
+	$our_dat .= "    { ";
+	$our_dat .= ".label = {" . $strtab_ref->{$cdom} . ", ". pstr_len($cdom) ;
+	if ($child_count == 0) {
+	    # complete label for no children
+	    $our_dat .= ", 0 } },\n";
+	} else {
+	    # complete label with children
+	    $our_dat .= ", 1 } }, ";
+	    $our_dat .= "{ .child = { " . $$opidx_ref . ", " . $child_count . " } },\n";
+	    $child_dat .= calc_pnode($cref, $strtab_ref, $opidx_ref);
+	}
     }
 
     return $our_dat . $child_dat;
@@ -303,21 +301,33 @@ print "};\n\n";
 # As labels cannot be more than 63 characters a byte length is more
 # than sufficient.
 
-print "struct pnode {\n";
-print "    uint16_t label; /**< index of domain element in string table */\n";
-print "    uint16_t child_count; /* number of children of this node */\n";
-print "    uint16_t child_index; /**< index of first child node */\n";
-print "    uint8_t label_len; /**< length of domain element in string table */\n";
+
+my $opidx = 2; # output index of node
+my $opnodes = ""; # output pnode initialisers
+
+# root node initialiser
+$opnodes .= "    /* root entry */\n";
+$opnodes .= "    { .label = { 0, 0, 1 } }, { .child = { " . $opidx . ", " . scalar keys(%tldtree) . " } },";
+
+# generate node initialiser
+$opnodes .= calc_pnode(\%tldtree, \%strtab, \$opidx);
+
+
+print "union pnode {\n";
+print "    struct {\n";
+print "        uint16_t idx; /**< index of domain element in string table */\n";
+print "        uint8_t len; /**< length of domain element in string table */\n";
+print "        uint8_t children; /**< has children */\n";
+print "    } label;\n";
+print "    struct {\n";
+print "        uint16_t index; /**< index of first child node */\n";
+print "        uint16_t count; /* number of children of this node */\n";
+print "    } child;\n";
 print "};\n\n";
 
-my $opidx = 1; # output index of node
+print "static const union pnode pnodes[" . $opidx . "] = {\n";
 
-print "static const struct pnode pnodes[" . $nodeidx . "] = {\n";
+# output node initialisors
+print $opnodes;
 
-# root node
-print "    /* root entry */\n"; 
-print "    { 0, " . scalar keys(%tldtree) . ", " . $opidx . ", 0 },"; 
-
-# all subsequent nodes
-print calc_pnode(\%tldtree, \%strtab, \$opidx);
 print "\n};\n\n";
