@@ -99,6 +99,37 @@ sub treesubdom
     }
 }
 
+# output an array of bytes in hex
+sub phexstr
+{
+    use bytes;
+
+    my ($str) = @_;
+    my $ret;
+
+    my @bytes = unpack('C*', $str);
+    my $count = 0;
+    my $txt = "";
+
+    foreach (@bytes) {
+	$ret = $ret . sprintf("0x%02x, ", $_);
+	$txt = $txt . sprintf("%c", $_);
+	$count += 1;
+	if ($count == 8) {
+	    $ret = $ret . " /* " . $txt . " */\n    ";
+	    $count = 0;
+	    $txt="";
+	}
+    }
+
+    if ($count != 0) {
+	$ret = $ret . " /* " . $txt . " */\n";
+    }
+
+    return $ret;
+}
+
+
 # output string table
 #
 # array of characters the node table below directly indexes entries.
@@ -113,34 +144,28 @@ sub generate_string_table
     }
 
     my @domelem_array = sort { length($b) <=> length($a) } @tmp_array;
-    
-    print "static const char stab[" . $$stridx_ref . "] = {\n";
-    while ( my ($key, $value) = each(%$strtab_ref) ) {
-    #for (@domelem_array) {
-#	my $key = $_;
-#	my $value = $strtab_ref->{$key};
-	print "    " . phexstr($key) . "/* " . $key . " " . $value . " */\n";
+
+    my $stringtable = "*!"; # table being generated
+    my $stringtablesize = 2;
+    for my $domelem (@domelem_array) {
+	my $substridx = index($stringtable, $domelem);
+	if ($substridx != -1) {
+	    # found existing string match so use it
+	    $strtab_ref->{$domelem} = $substridx;
+	} else {
+	    $strtab_ref->{$domelem} = $stringtablesize;
+	    $stringtable .= $domelem;
+	    {
+		use bytes;
+		$stringtablesize += length($domelem);
+	    }
+	}
     }
+    print "static const char stab[" . $stringtablesize . "] = {\n";
+    print "    " . phexstr($stringtable);
     print "};\n\n";
 }
 
-sub phexstr
-{
-    use bytes;
-
-    my ($str) = @_;
-    my $ret;
-
-    my @bytes = unpack('C*', $str);
-
-    #$ret = $ret . sprintf("0x%02x, ", scalar(@bytes));
-
-    foreach (@bytes) {
-	$ret = $ret . sprintf("0x%02x, ", $_);
-    }
-
-    return $ret;
-}
 
 # Output the length of the string
 sub pstr_len
