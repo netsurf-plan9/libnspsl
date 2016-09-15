@@ -56,6 +56,7 @@
 use strict;
 use warnings;
 use utf8;
+use File::Basename;
 use Tie::IxHash;
 use IDNA::Punycode;
 
@@ -272,13 +273,13 @@ while (my $line = <$fh>) {
     }
 }
 
-# C program header
-print <<EOF;
-/*
- * Generated with the genpubsuffix tool from effective_tld_names.dat
- */
 
-EOF
+# C program header
+print "/*\n";
+print " * Generated with the genpubsuffix tool.\n";
+print " *  From file " . basename($filename) . "\n";
+print " *  Converted on " . localtime() . "\n";
+print " */\n\n";
 
 generate_string_table(\%tldtree, \$nodeidx, \%strtab, \$stridx);
 
