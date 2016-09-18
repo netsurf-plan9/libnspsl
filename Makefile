@@ -46,3 +46,7 @@ I := /$(INCLUDEDIR)
 INSTALL_ITEMS := $(INSTALL_ITEMS) $(I):include/nspsl.h
 INSTALL_ITEMS := $(INSTALL_ITEMS) /$(LIBDIR)/pkgconfig:lib$(COMPONENT).pc.in
 INSTALL_ITEMS := $(INSTALL_ITEMS) /$(LIBDIR):$(OUTPUT)
+
+# obtain public suffix list database from upstream
+public_suffix_list.dat:
+	wget -O $@ https://publicsuffix.org/list/public_suffix_list.dat
