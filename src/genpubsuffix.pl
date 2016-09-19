@@ -138,30 +138,39 @@ sub generate_string_table
 {
     my ($tldtree_ref, $nodeidx_ref, $strtab_ref, $stridx_ref) = @_;
 
+    # obtain sorted array of domain label strings
+    my $labcount = 0; # total number of labels
+    my $labsize = 0; # total size of labels
     my @tmp_array;
-
-    foreach my $keys (keys %$strtab_ref) {
-	push(@tmp_array, $keys);
+    foreach my $key (keys %$strtab_ref) {
+	use bytes;
+	push(@tmp_array, $key);
+	$labcount += 1;
+	$labsize += length($key);
     }
-
     my @domelem_array = sort { length($b) <=> length($a) } @tmp_array;
 
     my $stringtable = "*!"; # table being generated
     my $stringtablesize = 2;
+    my $labfullcount = 2; # labels inserted into the table in full
     for my $domelem (@domelem_array) {
 	my $substridx = index($stringtable, $domelem);
 	if ($substridx != -1) {
 	    # found existing string match so use it
 	    $strtab_ref->{$domelem} = $substridx;
 	} else {
+	    # no existing string match to put complete label into table
+	    use bytes;
 	    $strtab_ref->{$domelem} = $stringtablesize;
 	    $stringtable .= $domelem;
-	    {
-		use bytes;
-		$stringtablesize += length($domelem);
-	    }
+	    $stringtablesize += length($domelem);
+	    $labfullcount += 1;
 	}
     }
+    print "/**\n";
+    print " * Domain label string table.\n";
+    print " * " . $labcount . " labels(" . $labsize . " bytes) reduced to " . $labfullcount . " labels(" . $stringtablesize . " bytes)\n";
+    print " */\n";
     print "static const char stab[" . $stringtablesize . "] = {\n";
     print "    " . phexstr($stringtable);
     print "};\n\n";
@@ -187,7 +196,7 @@ sub pstr_len
 #  those updating optidx to point to the next free node
 sub calc_pnode 
 {
-    my ($parent_ref, $strtab_ref, $opidx_ref) = @_;
+    my ($parent_ref, $strtab_ref, $opidx_ref, $nodecount_ref) = @_;
     my $our_dat;
     my $child_dat = "";
     my $startidx = $$opidx_ref;
@@ -216,6 +225,8 @@ sub calc_pnode
     while ( my ($cdom, $cref) = each(%$parent_ref) ) {
 	my $child_count = scalar keys (%$cref);
 
+	$$nodecount_ref += 1; # keep count of number of nodes in tree
+
 	$our_dat .= "    { ";
 	$our_dat .= ".label = {" . $strtab_ref->{$cdom} . ", ". pstr_len($cdom) ;
 	if ($child_count == 0) {
@@ -225,7 +236,7 @@ sub calc_pnode
 	    # complete label with children
 	    $our_dat .= ", 1 } }, ";
 	    $our_dat .= "{ .child = { " . $$opidx_ref . ", " . $child_count . " } },\n";
-	    $child_dat .= calc_pnode($cref, $strtab_ref, $opidx_ref);
+	    $child_dat .= calc_pnode($cref, $strtab_ref, $opidx_ref, $nodecount_ref);
 	}
     }
 
@@ -281,13 +292,27 @@ print " *  From file " . basename($filename) . "\n";
 print " *  Converted on " . localtime() . "\n";
 print " */\n\n";
 
-generate_string_table(\%tldtree, \$nodeidx, \%strtab, \$stridx);
-
 print "enum stab_entities {\n";
 print "    STAB_WILDCARD = 0,\n";
 print "    STAB_EXCEPTION = 1\n";
 print "};\n\n";
 
+print "/**\n";
+print " * Prefix suffix list graph node\n";
+print " */\n";
+print "union pnode {\n";
+print "    struct {\n";
+print "        uint16_t idx; /**< index of domain element in string table */\n";
+print "        uint8_t len; /**< length of domain element in string table */\n";
+print "        uint8_t children; /**< has children */\n";
+print "    } label;\n";
+print "    struct {\n";
+print "        uint16_t index; /**< index of first child node */\n";
+print "        uint16_t count; /**< number of children of this node */\n";
+print "    } child;\n";
+print "};\n\n";
+
+generate_string_table(\%tldtree, \$nodeidx, \%strtab, \$stridx);
 
 # output static node array
 #
@@ -302,33 +327,21 @@ print "};\n\n";
 # As labels cannot be more than 63 characters a byte length is more
 # than sufficient.
 
-
 my $opidx = 2; # output index of node
 my $opnodes = ""; # output pnode initialisers
+my $opnodecount = 1; # output domain label nodes
 
 # root node initialiser
 $opnodes .= "    /* root entry */\n";
 $opnodes .= "    { .label = { 0, 0, 1 } }, { .child = { " . $opidx . ", " . scalar keys(%tldtree) . " } },";
 
 # generate node initialiser
-$opnodes .= calc_pnode(\%tldtree, \%strtab, \$opidx);
+$opnodes .= calc_pnode(\%tldtree, \%strtab, \$opidx, \$opnodecount);
 
-
-print "union pnode {\n";
-print "    struct {\n";
-print "        uint16_t idx; /**< index of domain element in string table */\n";
-print "        uint8_t len; /**< length of domain element in string table */\n";
-print "        uint8_t children; /**< has children */\n";
-print "    } label;\n";
-print "    struct {\n";
-print "        uint16_t index; /**< index of first child node */\n";
-print "        uint16_t count; /* number of children of this node */\n";
-print "    } child;\n";
-print "};\n\n";
-
+print "/**\n";
+print " * PSL represented as a directed acyclic graph\n";
+print " * There are " . $opnodecount . " labels in " . $opidx . " nodes\n";
+print " */\n";
 print "static const union pnode pnodes[" . $opidx . "] = {\n";
-
-# output node initialisors
-print $opnodes;
-
+print $opnodes; # output node initialisors
 print "\n};\n\n";
