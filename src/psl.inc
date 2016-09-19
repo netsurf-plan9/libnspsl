@@ -1,9 +1,33 @@
 /*
  * Generated with the genpubsuffix tool.
  *  From file public_suffix_list.dat
- *  Converted on Thu Sep 15 23:32:52 2016
+ *  Converted on Mon Sep 19 16:46:42 2016
  */
 
+enum stab_entities {
+    STAB_WILDCARD = 0,
+    STAB_EXCEPTION = 1
+};
+
+/**
+ * Prefix suffix list graph node
+ */
+union pnode {
+    struct {
+        uint16_t idx; /**< index of domain element in string table */
+        uint8_t len; /**< length of domain element in string table */
+        uint8_t children; /**< has children */
+    } label;
+    struct {
+        uint16_t index; /**< index of first child node */
+        uint16_t count; /**< number of children of this node */
+    } child;
+};
+
+/**
+ * Domain label string table.
+ * 5870 labels(41864 bytes) reduced to 4326 labels(35678 bytes)
+ */
 static const char stab[35678] = {
     0x2a, 0x21, 0x78, 0x6e, 0x2d, 0x2d, 0x63, 0x6f,  /* *!xn--co */
     0x72, 0x72, 0x65, 0x69, 0x6f, 0x73, 0x2d, 0x65,  /* rreios-e */
@@ -4467,23 +4491,10 @@ static const char stab[35678] = {
     0x66, 0x67, 0x70, 0x7a, 0x77, 0x66,  /* fgpzwf */
 };
 
-enum stab_entities {
-    STAB_WILDCARD = 0,
-    STAB_EXCEPTION = 1
-};
-
-union pnode {
-    struct {
-        uint16_t idx; /**< index of domain element in string table */
-        uint8_t len; /**< length of domain element in string table */
-        uint8_t children; /**< has children */
-    } label;
-    struct {
-        uint16_t index; /**< index of first child node */
-        uint16_t count; /* number of children of this node */
-    } child;
-};
-
+/**
+ * PSL represented as a directed acyclic graph
+ * There are 8121 labels in 8580 nodes
+ */
 static const union pnode pnodes[8580] = {
     /* root entry */
     { .label = { 0, 0, 1 } }, { .child = { 2, 1553 } },
