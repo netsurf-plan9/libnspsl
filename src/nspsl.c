@@ -17,6 +17,74 @@
 #define DOMSEP '.'
 
 /**
+ * Test whether a character is upper-case alphabetical.
+ *
+ * \param[in] c  Character to test.
+ * \return true iff `c` is upper-case alphabetical, else false.
+ */
+static inline int ascii_is_alpha_upper(char c)
+{
+        return (c >= 'A' && c <= 'Z');
+}
+
+/**
+ * Convert an upper case character to lower case.
+ *
+ * If the given character is not upper case alphabetical, it is returned
+ * unchanged.
+ *
+ * \param[in] c  Character to convert.
+ * \return lower case conversion of `c` else `c`.
+ */
+static inline char ascii_to_lower(char c)
+{
+        return (ascii_is_alpha_upper(c)) ? (c + 'a' - 'A') : c;
+}
+
+static int huffcasecmp(unsigned int labelidx, const char *str, unsigned int len)
+{
+        const uint8_t *stabidx; /* string table byte index */
+        unsigned int bitidx; /* amount of current byte used */
+        unsigned int cnt; /* current character being compared */
+        uint8_t curc; /* current label table byte */
+        unsigned int curh; /* current huffman tree node */
+        int res;
+        int term;
+
+        /* get address of byte */
+        stabidx = &stab[labelidx >> 3];
+        /* offset of first bit */
+        bitidx = labelidx & 7;
+
+        curc = *stabidx; stabidx++;
+        curc = curc >> bitidx;
+
+        for (cnt = 0; cnt < len; cnt++) {
+                /* walk huffman code table to get value */
+                curh = 0;
+                term = 0;
+                while (term == 0) {
+                        term = htable[curh + (curc & 1)].term;
+                        curh = htable[curh + (curc & 1)].value;
+                        bitidx++;
+                        if (bitidx < 8) {
+                                curc = curc >> 1;
+                        } else {
+                                curc = *stabidx; stabidx++;
+                                bitidx = 0;
+                        }
+                }
+
+                res = ascii_to_lower(str[cnt]) - curh;
+                if (res != 0) {
+                        return res;
+                }
+        }
+
+        return 0;
+}
+
+/**
  * match the label element of the domain from a point in the tree
  */
 static int matchlabel(int parent, const char *start, int len)
@@ -38,7 +106,7 @@ static int matchlabel(int parent, const char *start, int len)
                                 ridx = cidx;
                         } else {
                                 if ((pnodes[cidx].label.len == len) &&
-                                    (strncasecmp(&stab[pnodes[cidx].label.idx],
+                                    (huffcasecmp(pnodes[cidx].label.idx,
                                                  start,
                                                  len) == 0)) {
                                         /* label match */

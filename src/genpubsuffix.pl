@@ -29,7 +29,7 @@
 # There is a single exported function
 #
 # const char *getpublicsuffix(const char *hostname)
-# 
+#
 # This returns the public suffix of the passed hostname or NULL if
 #  there was an error processing the hostname. The returned pointer is
 #  within the passed hostname so if the returned pointer is the same as
@@ -68,7 +68,7 @@ sub treesubdom
     my $isexception = 0;
     tie my %node, 'Tie::IxHash'; # this nodes hash
 
-    # deal with explicit domain exceptions 
+    # deal with explicit domain exceptions
     $isexception = ($domelem =~ s/\A!//);
     if ($isexception != 0) {
 	$node{"!"} = {};
@@ -85,7 +85,7 @@ sub treesubdom
 	    # update the character count index
 	    $$stridx_ref += length($domelem_puny);
 	}
-	
+
     }
 
     # link new node list into tree
@@ -100,36 +100,184 @@ sub treesubdom
     }
 }
 
-# output an array of bytes in hex
-sub phexstr
+# output an array of bytes in binary
+sub phexbits
 {
     use bytes;
-
+    my %btoh = (
+	"0000" => "0",
+	"1000" => "1",
+	"0100" => "2",
+	"1100" => "3",
+	"0010" => "4",
+	"1010" => "5",
+	"0110" => "6",
+	"1110" => "7",
+	"0001" => "8",
+	"1001" => "9",
+	"0101" => "A",
+	"1101" => "B",
+	"0011" => "C",
+	"1011" => "D",
+	"0111" => "E",
+	"1111" => "F",
+	);
     my ($str) = @_;
-    my $ret;
-
-    my @bytes = unpack('C*', $str);
+    my @nyb = unpack "a4" x ((length($str)/4)-1) . "a*", $str;
+    my $ret = "";
     my $count = 0;
-    my $txt = "";
 
-    foreach (@bytes) {
-	$ret = $ret . sprintf("0x%02x, ", $_);
-	$txt = $txt . sprintf("%c", $_);
+    do {
+	my $lo = shift @nyb;
+	my $hi = shift @nyb;
+	$ret = $ret . "0x" . $btoh{$hi} . $btoh{$lo} . ",";
 	$count += 1;
-	if ($count == 8) {
-	    $ret = $ret . " /* " . $txt . " */\n    ";
+	if ($count == 16) {
+	    $ret = $ret . "\n";
 	    $count = 0;
-	    $txt="";
 	}
-    }
+
+    } while (@nyb > 0);
 
     if ($count != 0) {
-	$ret = $ret . " /* " . $txt . " */\n";
+	$ret = $ret . "\n";
     }
 
     return $ret;
 }
 
+
+# produce encode and decode dictionary from a tree
+sub walk_huffman_tree {
+    my ($node, $code, $h, $rev_h) = @_;
+
+    my $c = $node->[0];
+    if (ref $c) {
+	walk_huffman_tree($c->[$_], $code.$_, $h, $rev_h) for 0,1;
+    } else {
+	$h->{$c} = $code; $rev_h->{$code} = $c;
+    }
+
+    $h, $rev_h;
+}
+
+# use huffman encoding to generate a dictionary from a string
+#
+# returns a pair of hashes for encode and decode
+sub mk_huffman_tree {
+    my ($domelem_array_ref) = @_;
+
+    # generate string table to get source of huffman frequencies
+    my $stringtable = "*!";	# table being generated
+    for my $domelem (@$domelem_array_ref) {
+	my $substridx = index($stringtable, $domelem);
+	if ($substridx == -1) {
+	    # no existing string match to put complete label into table
+	    #use bytes;
+	    $stringtable .= $domelem;
+	}
+    }
+
+    my (%freq, @nodes);
+    for my $c (split //, $stringtable) {
+	$freq{$c}++;
+    }
+
+    @nodes = map([$_, $freq{$_}], keys %freq);
+
+    # build priority queue
+    do {
+	@nodes = sort {$a->[1] <=> $b->[1]} @nodes;
+	my ($x, $y) = splice @nodes, 0, 2;
+	push @nodes, [[$x, $y], $x->[1] + $y->[1]]
+    } while (@nodes > 1);
+
+    return @nodes;
+}
+
+sub encode {
+	my ($str, $dict) = @_;
+	join '', map $dict->{$_}//die("bad char $_"), split '', $str
+}
+
+# recursively walk the tree and generate nodes
+#
+# each huffman graph element is made up from three nodes
+# [
+#   [
+#     [ l ],
+#     [ r ]
+#   ],
+#   count
+# ]
+#
+# the l and r nodes may either be additional graph elements or terminal elements
+#
+sub generate_huffman_node
+{
+    my ($dict, $node, $htableidx) = @_;
+
+    if (! ref $node->[0]) {
+	die("bad huffman tree");
+    }
+
+    my $htable = "";
+
+    my $l = $node->[0]->[0];
+    my $r = $node->[0]->[1];
+
+    my $lhtable = "";
+    my $rhtable = "";
+    my $lhtableidx = 0;
+    my $rhtableidx = 0;
+    $htableidx += 2;
+
+    if (ref $l->[0]) {
+	($lhtable, $lhtableidx) = generate_huffman_node($dict, $l, $htableidx);
+	$htable .= "    { 0, " . $htableidx. " },\n";
+    } else {
+	$htable .= "    { 1, '" . $l->[0] . "' }, /* '" . $l->[0] . "': " . $dict->{$l->[0]} . " */\n";
+	$lhtableidx = $htableidx;
+    }
+
+    if (ref $r->[0]) {
+	($rhtable, $rhtableidx) = generate_huffman_node($dict, $r, $lhtableidx);
+	$htable .= "    { 0, " . $lhtableidx . " },\n" . $lhtable . $rhtable;
+    } else {
+	$htable .= "    { 1, '" . $r->[0] . "' }, /* '" . $r->[0] . "': " . $dict->{$r->[0]} . " */\n" . $lhtable;
+	$rhtableidx = $lhtableidx;
+    }
+
+    $htable, $rhtableidx;
+
+}
+
+# generate c code to represent encoding used
+sub generate_huffman_table
+{
+    my ($hnodes_ref, $dict) = @_;
+    my ($htable, $htablesize) = generate_huffman_node($dict, $hnodes_ref->[0], 0);
+    my $ret;
+
+    $ret .= "/**\n";
+    $ret .= " * Huffman coding node\n";
+    $ret .= " */\n";
+    $ret .= "struct hnode {\n";
+    $ret .= "    unsigned int term:1; /**< non zero if the node terminates a code */\n";
+    $ret .= "    unsigned int value:7; /**< value in node */\n";
+    $ret .= "};\n\n";
+
+    $ret .= "/**\n";
+    $ret .= " * Huffman decoding table\n";
+    $ret .= " *\n";
+    $ret .= " * nodes are in pairs even nodes are for 0bit odd for 1\n";
+    $ret .= " */\n";
+    $ret .= "static const struct hnode htable[" . $htablesize . "] = {\n";
+    $ret .= $htable;
+    $ret .= "};\n\n";
+
+    return $ret;
+}
 
 # output string table
 #
@@ -150,30 +298,57 @@ sub generate_string_table
     }
     my @domelem_array = sort { length($b) <=> length($a) } @tmp_array;
 
-    my $stringtable = "*!"; # table being generated
-    my $stringtablesize = 2;
+    # build huffman tree
+    my @hnodes = mk_huffman_tree(\@domelem_array);
+
+    # generate huffman encoding dictionary
+    my ($h, $rev_h) = walk_huffman_tree($hnodes[0], '', {}, {});
+
+    # generate bit table using huffman encoding
+    my $bittable = encode("*", $h); # table being generated
+    my $exceptidx = length($bittable);
+    $bittable .= encode("!", $h);
+    my $bittablesize = length($bittable);
     my $labfullcount = 2; # labels inserted into the table in full
     for my $domelem (@domelem_array) {
-	my $substridx = index($stringtable, $domelem);
+	my $domelembits = encode($domelem, $h);
+	my $substridx = index($bittable, $domelembits);
 	if ($substridx != -1) {
 	    # found existing string match so use it
 	    $strtab_ref->{$domelem} = $substridx;
 	} else {
 	    # no existing string match to put complete label into table
 	    use bytes;
-	    $strtab_ref->{$domelem} = $stringtablesize;
-	    $stringtable .= $domelem;
-	    $stringtablesize += length($domelem);
+	    $strtab_ref->{$domelem} = $bittablesize;
+	    $bittable .= $domelembits;
+	    $bittablesize += length($domelembits);
 	    $labfullcount += 1;
 	}
     }
-    print "/**\n";
-    print " * Domain label string table.\n";
-    print " * " . $labcount . " labels(" . $labsize . " bytes) reduced to " . $labfullcount . " labels(" . $stringtablesize . " bytes)\n";
-    print " */\n";
-    print "static const char stab[" . $stringtablesize . "] = {\n";
-    print "    " . phexstr($stringtable);
+    my $srounding = $bittablesize % 8;
+    if ($srounding > 0) {
+	# ensure bittable is a multiple of 8 bits long for byte array generation
+	$bittable .= '0' x (8 - $srounding);
+	$bittablesize += (8 - $srounding);
+    }
+
+    print "enum stab_entities {\n";
+    print "    STAB_WILDCARD = 0,\n";
+    print "    STAB_EXCEPTION = " . $exceptidx . "\n";
     print "};\n\n";
+
+    # output the node table to allow decoding
+    print generate_huffman_table(\@hnodes, $h);
+
+
+    print "/**\n";
+    print " * Domain label string table huffman encoded.\n";
+    print " * " . $labcount . " labels(" . $labsize * 8 . " bits) reduced to " . $labfullcount . " labels(" . $bittablesize . " bits)\n";
+    print " */\n";
+    print "static const uint8_t stab[" . ($bittablesize / 8) . "] = {\n";
+    print phexbits($bittable);
+    print "};\n\n";
+
 }
 
 
@@ -194,7 +369,7 @@ sub pstr_len
 
 # generate all the children of a parent node and recurse into each of
 #  those updating optidx to point to the next free node
-sub calc_pnode 
+sub calc_pnode
 {
     my ($parent_ref, $strtab_ref, $opidx_ref, $nodecount_ref) = @_;
     my $our_dat;
@@ -214,7 +389,7 @@ sub calc_pnode
 	}
     }
 
-    # entry block 
+    # entry block
     if ($startidx == ($$opidx_ref - 1)) {
 	$our_dat = "\n    /* entry " . $startidx . " */\n";
     } else {
@@ -227,17 +402,17 @@ sub calc_pnode
 
 	$$nodecount_ref += 1; # keep count of number of nodes in tree
 
-	$our_dat .= "    { ";
-	$our_dat .= ".label = {" . $strtab_ref->{$cdom} . ", ". pstr_len($cdom) ;
+	$our_dat .= "    { .label = {" . sprintf("% 7d", $strtab_ref->{$cdom}) . ",". sprintf("% 3d", pstr_len($cdom));
 	if ($child_count == 0) {
 	    # complete label for no children
-	    $our_dat .= ", 0 } },\n";
+	    $our_dat .= ", 0 } },";
 	} else {
 	    # complete label with children
 	    $our_dat .= ", 1 } }, ";
-	    $our_dat .= "{ .child = { " . $$opidx_ref . ", " . $child_count . " } },\n";
+	    $our_dat .= "{ .child = { " . $$opidx_ref . ", " . $child_count . " } },";
 	    $child_dat .= calc_pnode($cref, $strtab_ref, $opidx_ref, $nodecount_ref);
 	}
+	$our_dat .= " /* " . $cdom . " */\n";
     }
 
     return $our_dat . $child_dat;
@@ -292,19 +467,14 @@ print " *  From file " . basename($filename) . "\n";
 print " *  Converted on " . localtime() . "\n";
 print " */\n\n";
 
-print "enum stab_entities {\n";
-print "    STAB_WILDCARD = 0,\n";
-print "    STAB_EXCEPTION = 1\n";
-print "};\n\n";
-
 print "/**\n";
-print " * Prefix suffix list graph node\n";
+print " * Public suffix list graph node\n";
 print " */\n";
 print "union pnode {\n";
 print "    struct {\n";
-print "        uint16_t idx; /**< index of domain element in string table */\n";
-print "        uint8_t len; /**< length of domain element in string table */\n";
-print "        uint8_t children; /**< has children */\n";
+print "        unsigned int idx:24; /**< index of domain element in string table */\n";
+print "        unsigned int len:6; /**< length of domain element in string table */\n";
+print "        unsigned int children:1; /**< has children */\n";
 print "    } label;\n";
 print "    struct {\n";
 print "        uint16_t index; /**< index of first child node */\n";
