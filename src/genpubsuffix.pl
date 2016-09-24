@@ -124,16 +124,23 @@ sub phexbits
 	);
     my ($str) = @_;
     my @nyb = unpack "a4" x ((length($str)/4)-1) . "a*", $str;
-    my $ret = "";
+    my $ret = "   ";
     my $count = 0;
 
     do {
-	my $lo = shift @nyb;
-	my $hi = shift @nyb;
-	$ret = $ret . "0x" . $btoh{$hi} . $btoh{$lo} . ",";
+	my $a = shift @nyb;
+	my $b = shift @nyb;
+	my $c = shift @nyb;
+	my $d = shift @nyb;
+	my $e = shift @nyb;
+	my $f = shift @nyb;
+	my $g = shift @nyb;
+	my $h = shift @nyb;
+
+	$ret = $ret . " 0x" . $btoh{$h} . $btoh{$g}. $btoh{$f} . $btoh{$e}. $btoh{$d} . $btoh{$c}. $btoh{$b} . $btoh{$a} . ",";
 	$count += 1;
-	if ($count == 16) {
-	    $ret = $ret . "\n";
+	if ($count == 6) {
+	    $ret = $ret . "\n   ";
 	    $count = 0;
 	}
 
@@ -263,8 +270,8 @@ sub generate_huffman_table
     $ret .= " * Huffman coding node\n";
     $ret .= " */\n";
     $ret .= "struct hnode {\n";
-    $ret .= "    unsigned int term:1; /**< non zero if the node terminates a code */\n";
-    $ret .= "    unsigned int value:7; /**< value in node */\n";
+    $ret .= "    uint8_t term:1; /**< non zero if the node terminates a code */\n";
+    $ret .= "    uint8_t value:7; /**< value in node */\n";
     $ret .= "};\n\n";
 
     $ret .= "/**\n";
@@ -325,11 +332,11 @@ sub generate_string_table
 	    $labfullcount += 1;
 	}
     }
-    my $srounding = $bittablesize % 8;
+    my $srounding = $bittablesize % 32;
     if ($srounding > 0) {
-	# ensure bittable is a multiple of 8 bits long for byte array generation
-	$bittable .= '0' x (8 - $srounding);
-	$bittablesize += (8 - $srounding);
+	# ensure bittable is a multiple of 32 bits long for array generation
+	$bittable .= '0' x (32 - $srounding);
+	$bittablesize += (32 - $srounding);
     }
 
     print "enum stab_entities {\n";
@@ -345,7 +352,7 @@ sub generate_string_table
     print " * Domain label string table huffman encoded.\n";
     print " * " . $labcount . " labels(" . $labsize * 8 . " bits) reduced to " . $labfullcount . " labels(" . $bittablesize . " bits)\n";
     print " */\n";
-    print "static const uint8_t stab[" . ($bittablesize / 8) . "] = {\n";
+    print "static const uint32_t stab[" . ($bittablesize / 32) . "] = {\n";
     print phexbits($bittable);
     print "};\n\n";
 

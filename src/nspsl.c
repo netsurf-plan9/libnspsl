@@ -43,31 +43,29 @@ static inline char ascii_to_lower(char c)
 
 static int huffcasecmp(unsigned int labelidx, const char *str, unsigned int len)
 {
-        const uint8_t *stabidx; /* string table byte index */
+        const uint32_t *stabidx; /* string table byte index */
         unsigned int bitidx; /* amount of current byte used */
         unsigned int cnt; /* current character being compared */
-        uint8_t curc; /* current label table byte */
-        unsigned int curh; /* current huffman tree node */
+        uint32_t curc; /* current lable bits */
         int res;
-        int term;
+        const struct hnode zhnode = { 0, 0 };/* zero node */
+        const struct hnode *chnode;
 
         /* get address of byte */
-        stabidx = &stab[labelidx >> 3];
+        stabidx = &stab[labelidx >> 5];
         /* offset of first bit */
-        bitidx = labelidx & 7;
+        bitidx = labelidx & 0x1f;
 
         curc = *stabidx; stabidx++;
         curc = curc >> bitidx;
 
         for (cnt = 0; cnt < len; cnt++) {
                 /* walk huffman code table to get value */
-                curh = 0;
-                term = 0;
-                while (term == 0) {
-                        term = htable[curh + (curc & 1)].term;
-                        curh = htable[curh + (curc & 1)].value;
+                chnode = &zhnode;
+                while (chnode->term == 0) {
+                        chnode = &htable[chnode->value + (curc & 1)];
                         bitidx++;
-                        if (bitidx < 8) {
+                        if (bitidx < 32) {
                                 curc = curc >> 1;
                         } else {
                                 curc = *stabidx; stabidx++;
@@ -75,7 +73,7 @@ static int huffcasecmp(unsigned int labelidx, const char *str, unsigned int len)
                         }
                 }
 
-                res = ascii_to_lower(str[cnt]) - curh;
+                res = ascii_to_lower(str[cnt]) - chnode->value;
                 if (res != 0) {
                         return res;
                 }
