@@ -41,6 +41,10 @@ it are included in the source release as a conveniance but can be
 regenerated simply by deleting the src/public_suffix_list.dat file and
 making any target.
 
+If you wish to update the public suffix list data file then the build
+files will run some perl not normally needed during a build.  This
+perl script depends on libidna-punycode-perl and libtie-ixhash-perl.
+
 Other libraries
 ---------------
 
