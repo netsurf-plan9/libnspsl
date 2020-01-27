@@ -9,9 +9,9 @@
  */
 union pnode {
     struct {
-        unsigned int idx:24; /**< index of domain element in string table */
-        unsigned int len:6; /**< length of domain element in string table */
-        unsigned int children:1; /**< has children */
+        uint32_t idx; /**< index of domain element in string table */
+        uint16_t len; /**< length of domain element in string table */
+        uint16_t children; /**< has children */
     } label;
     struct {
         uint16_t index; /**< index of first child node */
@@ -28,8 +28,8 @@ enum stab_entities {
  * Huffman coding node
  */
 struct hnode {
-    uint8_t term:1; /**< non zero if the node terminates a code */
-    uint8_t value:7; /**< value in node */
+    uint8_t term; /**< non zero if the node terminates a code */
+    uint8_t value; /**< value in node */
 };
 
 /**
