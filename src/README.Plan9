@@ -1,0 +1,17 @@
+The bitfields in 'struct pnode' and 'struct hnode' is replaced
+with ordinary data types. The C compiler in Plan 9 supports
+bitfields, but has problems initialising them statically when
+they are in arrays. This makes the structures slightly bigger,
+but I don't think it will make a big difference in a modern PC
+running Plan 9.
+
+pnode bitfield: 4 bytes (31 bits used)
+pnode converted: 8 bytes
+
+hnode bitfield: 1 byte
+hnode converted: 2 bytes
+
+An alternative would be to change the generating perl script
+so that it generates prepacked 32-bit unsigned ints, that are
+type cast to the bitfield structs. It can be done if will have
+an impact on performance.
