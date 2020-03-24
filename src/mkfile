@@ -1,17 +1,8 @@
 </$objtype/mkfile
 
-CC=pcc
+LIB=libnspsl.$O.a
 OBJ=nspsl.$O
 HFILES=../include/nspsl.h
-CFLAGS=-I ../include -I . -I ../../posix/include -D_BSD_EXTENSION -D_SUSV2_SOURCE
 
-all:V:	libnspsl.$O.a
-
-libnspsl.$O.a: $OBJ $HFILES
-	ar rv libnspsl.$O.a $OBJ
-
-%.$O:	%.c $HFILES
-	$CC $CFLAGS -c -o $target $stem.c
-
-clean:V:
-	rm -f $OBJ libnspsl.$O.a
+<../../nsport.mk
+<../../nsportlib.mk

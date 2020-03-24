@@ -9,9 +9,9 @@
  */
 union pnode {
     struct {
-        uint32_t idx; /**< index of domain element in string table */
-        uint16_t len; /**< length of domain element in string table */
-        uint16_t children; /**< has children */
+        unsigned int idx; /**< index of domain element in string table */
+        unsigned char len; /**< length of domain element in string table */
+        unsigned char children; /**< has children */
     } label;
     struct {
         uint16_t index; /**< index of first child node */
